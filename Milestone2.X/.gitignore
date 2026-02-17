@@ -1,0 +1,54 @@
+# Build outputs
+build/
+dist/
+out/
+_build/
+
+# MPLAB X / nbproject generated
+nbproject/private/
+nbproject/*.mk
+nbproject/Makefile-genesis.properties
+nbproject/Makefile-impl.mk
+nbproject/Makefile-variables.mk
+nbproject/Makefile-default.mk
+nbproject/Makefile-local-default.mk
+
+# CMake generated
+cmake/**/.generated/
+cmake/**/CMakeCache.txt
+cmake/**/CMakeFiles/
+cmake/**/build.ninja
+cmake/**/compile_commands.json
+cmake/**/cmake_install.cmake
+cmake/**/rules.ninja
+
+# XC8 / PIC compiler
+*.o
+*.p1
+*.d
+*.i
+*.hex
+*.elf
+*.lst
+*.sym
+*.map
+*.cmf
+*.sdb
+*.mum
+*.hxl
+*.rlf
+memoryfile.xml
+*.cod
+*.cof
+*.pre
+
+# IDE / editor
+.vscode/*.mplab-local.json
+*.bak
+*~
+.DS_Store
+
+# Debug / temp
+*.log
+*.tmp
+.cache/

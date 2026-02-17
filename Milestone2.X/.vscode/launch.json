@@ -1,0 +1,24 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Program MPLAB project",
+            "type": "mplab-core-da",
+            "request": "launch",
+            "noDebug": true
+        },
+        {
+            "name": "Launch Milestone2: default",
+            "type": "mplab-core-da",
+            "request": "launch",
+            "project": "Milestone2",
+            "configuration": "default",
+            "stopOnEntry": true,
+            "preLaunchTask": "Milestone2: default - Full Build",
+            "program": "/Users/edungdivinefavour/Documents/ECE3232/Milestone2.X/out/Milestone2/default.elf"
+        }
+    ]
+}
