@@ -84,21 +84,28 @@ void UART_Init(void)
     PIE3bits.RCIE = 0; 
 }
 
+//function that takes an array of bytes
+// loops through bytes, and puts each one on UART transmit register
 void UART_Write(const uint8_t *buf, uint8_t len)
 {
     for (uint8_t i = 0; i < len; i++) {
+        //while UART TX reg NOT empty
         while (!TX1STAbits.TRMT);
 
         TX1REG = buf[i];
     }
 }
 
+//function that returns what UART receives in receive register
 uint8_t UART_Read(void)
-{
+{   
+    //overrun error being cleared
     if (RC1STAbits.OERR) {
         RC1STAbits.CREN = 0;
         RC1STAbits.CREN = 1;
     }
+
+    //while UART RC reg NOT having byte
     while (!PIR3bits.RCIF) { };
 
     return RC1REG;
@@ -127,16 +134,25 @@ const PCU_Info_t *PCU_GetInfo(void)
     return &info;
 }
 
+//this function sends get User Data command to get FLYSKY channels data
 const PCU_UserData_t *PCU_GetUserData(void)
 {
+    //'u' is an instance of struct, will contain all the FLYSKY data
     static PCU_UserData_t u;
+    //array of bytes to send
     uint8_t cmd[] = { PCU_SYNC1, PCU_SYNC2, 0x01, 0x05, 0x00, 0x00 };
+    //array of bytes where response is stored
     uint8_t b[PCU_GET_USER_DATA_RESPONSE_LEN];
 
+    //sending get User Data command
     UART_Write(cmd, sizeof(cmd));
-    for (uint8_t i = 0; i < 6; i++) (void)UART_Read();  /* skip header */
+
+    for (uint8_t i = 0; i < 6; i++) (void)UART_Read();  /* skip header, do nothing with readings */
+    //now store rest of readings (all 20 channel related values) in b[]
     for (uint8_t i = 0; i < PCU_GET_USER_DATA_RESPONSE_LEN; i++) b[i] = UART_Read();
 
+    //go to array locations where FLYSKY data is and put data inside struct 
+    //all struct values have to be 16 bits 
     u.right_x   = scale_u8_to_u16(&b[0]);
     u.right_y   = scale_u8_to_u16(&b[2]);
     u.left_y    = scale_u8_to_u16(&b[4]);
@@ -148,17 +164,21 @@ const PCU_UserData_t *PCU_GetUserData(void)
     u.pot_vra   = scale_u8_to_u16(&b[16]);
     u.pot_vrb   = scale_u8_to_u16(&b[18]);
 
+    //return struct ptr
     return &u;
 }
 
 // ================= SET MOTOR =================
+//Set Motor Settings Command
 void PCU_SetMotor(const MotorSettings_t *motor)
 {
+    //all required bytes plus motor struct data
     uint8_t buf[] = {
         PCU_SYNC1, PCU_SYNC2, 0x01, 0x06, 0x04, 0x00,
         motor->dirA, motor->pwmA, motor->dirB, motor->pwmB
     };
 
+    //sending command 
     UART_Write(buf, sizeof(buf));
 }
 
@@ -177,25 +197,36 @@ int main(void)
     __delay_ms(1000);
 
     while (1) {
+        //getData is called, returns location of struct with all FLYSKY data
         const PCU_UserData_t *fly = PCU_GetUserData();
+        //put Y-axis value of right joystick into y var
         uint16_t y = fly->right_y;
 
+        //motor initially stopped and stays stopped IF joystick between thresholds
         uint8_t dir = MotorDir_Brake;
         uint8_t pwm = 0;
 
+        //if right joystick pushed up enough, motor direction is forward
         if (y >= JOY_FWD_THRESHOLD) {
             dir = MotorDir_Forward;
+            //calc motor speed
             pwm = scale_u16_to_pwm(y, JOY_FWD_THRESHOLD, JOY_FWD_MAX);
         } 
         
+        //if right joystick pushed down enough, motor direction is backward
         else if (y <= JOY_BACK_THRESHOLD) {
             dir = MotorDir_Backward;
+            //calc motor speed
             pwm = scale_u16_to_pwm(JOY_BACK_THRESHOLD - y, 0u, JOY_BACK_THRESHOLD);
         }
 
+        //take direction and speed of both motors, store in motor struct
         MotorSettings_t motor = { dir, pwm, dir, pwm };
+
+        //sending the command which sets motor based on our struct data
         PCU_SetMotor(&motor);
 
+        //process of checking joysticks and setting motors happens every 100ms
         __delay_ms(POLL_INTERVAL_MS);
     }
 }

@@ -6,6 +6,7 @@
 #define PCU_SYNC1  0xFE
 #define PCU_SYNC2  0x19
 
+//MotorDir_t type can only be 0,1,2
 typedef enum {
     MotorDir_Brake    = 0,
     MotorDir_Forward  = 1,
@@ -14,6 +15,8 @@ typedef enum {
 
 
 // =========== Important structs ============
+
+//struct which holds information abt general team info
 typedef struct {
     uint8_t  team;
     uint8_t  player;
@@ -22,6 +25,7 @@ typedef struct {
     uint8_t  repair;
 } PCU_Info_t;
 
+//struct which holds information abt all 10 channels, including the joysticks
 typedef struct {
     uint16_t right_x;
     uint16_t right_y;
@@ -35,6 +39,7 @@ typedef struct {
     uint16_t pot_vrb;
 } PCU_UserData_t;
 
+//struct which holds info abt motor direction and speed for the two motors
 typedef struct {
     uint8_t dirA;
     uint8_t pwmA;
