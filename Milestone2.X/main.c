@@ -44,6 +44,9 @@
 #include <stdint.h>
 #include "pcu_api.h"
 #include "util.h"
+#include <stdbool.h>
+#include "laser_turret_def.h"
+#include "rfid_seq.h"
 
 #define _XTAL_FREQ 32000000UL
 
@@ -84,6 +87,27 @@ void UART_Init(void)
     PIE3bits.RCIE = 0; 
 }
 
+// ================= PCU =================
+const PCU_Info_t *PCU_GetInfo(void)
+{
+    static PCU_Info_t info;
+    uint8_t cmd[] = { PCU_SYNC1, PCU_SYNC2, 0x01, 0x04, 0x00, 0x00 };
+    uint8_t b[PCU_GET_INFO_RESPONSE_LEN];
+
+    UART_Write(cmd, sizeof(cmd));
+    for (uint8_t i = 0; i < 6; i++) (void)UART_Read();  /* skip header */
+    for (uint8_t i = 0; i < PCU_GET_INFO_RESPONSE_LEN; i++) b[i] = UART_Read();
+
+    info.team   = b[0];
+    info.player = b[1];
+    info.health = scale_u8_to_u16(&b[2]);
+    info.shield = b[4];
+    info.repair = b[5];
+
+    return &info;
+}
+
+
 //function that takes an array of bytes
 // loops through bytes, and puts each one on UART transmit register
 void UART_Write(const uint8_t *buf, uint8_t len)
@@ -111,48 +135,18 @@ uint8_t UART_Read(void)
     return RC1REG;
 }
 
-
-
-
-// ================= PCU =================
-const PCU_Info_t *PCU_GetInfo(void)
-{
-    static PCU_Info_t info;
-    uint8_t cmd[] = { PCU_SYNC1, PCU_SYNC2, 0x01, 0x04, 0x00, 0x00 };
-    uint8_t b[PCU_GET_INFO_RESPONSE_LEN];
-
-    UART_Write(cmd, sizeof(cmd));
-    for (uint8_t i = 0; i < 6; i++) (void)UART_Read();  /* skip header */
-    for (uint8_t i = 0; i < PCU_GET_INFO_RESPONSE_LEN; i++) b[i] = UART_Read();
-
-    info.team   = b[0];
-    info.player = b[1];
-    info.health = scale_u8_to_u16(&b[2]);
-    info.shield = b[4];
-    info.repair = b[5];
-
-    return &info;
-}
-
 //this function sends get User Data command to get FLYSKY channels data
 const PCU_UserData_t *PCU_GetUserData(void)
 {
-    //'u' is an instance of struct, will contain all the FLYSKY data
     static PCU_UserData_t u;
-    //array of bytes to send
     uint8_t cmd[] = { PCU_SYNC1, PCU_SYNC2, 0x01, 0x05, 0x00, 0x00 };
-    //array of bytes where response is stored
     uint8_t b[PCU_GET_USER_DATA_RESPONSE_LEN];
 
-    //sending get User Data command
     UART_Write(cmd, sizeof(cmd));
 
     for (uint8_t i = 0; i < 6; i++) (void)UART_Read();  /* skip header, do nothing with readings */
-    //now store rest of readings (all 20 channel related values) in b[]
     for (uint8_t i = 0; i < PCU_GET_USER_DATA_RESPONSE_LEN; i++) b[i] = UART_Read();
 
-    //go to array locations where FLYSKY data is and put data inside struct 
-    //all struct values have to be 16 bits 
     u.right_x   = scale_u8_to_u16(&b[0]);
     u.right_y   = scale_u8_to_u16(&b[2]);
     u.left_y    = scale_u8_to_u16(&b[4]);
@@ -164,7 +158,6 @@ const PCU_UserData_t *PCU_GetUserData(void)
     u.pot_vra   = scale_u8_to_u16(&b[16]);
     u.pot_vrb   = scale_u8_to_u16(&b[18]);
 
-    //return struct ptr
     return &u;
 }
 
@@ -196,37 +189,90 @@ int main(void)
     UART_Init();
     __delay_ms(1000);
 
+
+    bool shield_code_received = false;
+    int shield_poll_counter = 0;
+    const PCU_Info_t * info = PCU_GetInfo();
+    bool somethingtoSend = false;
+    uint16_t zone = 0;
+    int z = -1;
+    uint16_t tag_v;
+    int IR_poll_counter = 0;
+
+    //RA2 pin for reading in the IR receiver output
+    TRISAbits.TRISA2 = 1;
+    ANSELAbits.ANSA2 = 0;
+
+    SPI_setup();
+
     while (1) {
-        //getData is called, returns location of struct with all FLYSKY data
         const PCU_UserData_t *fly = PCU_GetUserData();
-        //put Y-axis value of right joystick into y var
         uint16_t y = fly->right_y;
 
-        //motor initially stopped and stays stopped IF joystick between thresholds
         uint8_t dir = MotorDir_Brake;
         uint8_t pwm = 0;
 
-        //if right joystick pushed up enough, motor direction is forward
         if (y >= JOY_FWD_THRESHOLD) {
             dir = MotorDir_Forward;
-            //calc motor speed
             pwm = scale_u16_to_pwm(y, JOY_FWD_THRESHOLD, JOY_FWD_MAX);
         } 
-        
-        //if right joystick pushed down enough, motor direction is backward
+
         else if (y <= JOY_BACK_THRESHOLD) {
             dir = MotorDir_Backward;
-            //calc motor speed
             pwm = scale_u16_to_pwm(JOY_BACK_THRESHOLD - y, 0u, JOY_BACK_THRESHOLD);
         }
 
-        //take direction and speed of both motors, store in motor struct
         MotorSettings_t motor = { dir, pwm, dir, pwm };
 
-        //sending the command which sets motor based on our struct data
         PCU_SetMotor(&motor);
 
-        //process of checking joysticks and setting motors happens every 100ms
+
+        shield_poll_counter++;
+
+        if (shield_poll_counter >= 5) {
+            shield_code_received = poll_for_shield_code();
+            shield_poll_counter = 0;
+        }
+            
+        uint16_t sw_c = fly -> switch_c;
+        
+        if (info -> health > 0) {
+            if (sw_c == 2000) {
+                if (shield_code_received) {
+                    transmit_shield_code();
+                }
+            }
+        }
+
+        uint16_t sw_d = fly -> switch_d;
+
+        if (sw_d == 2000) {
+            uint32_t tag_val = read_tag();
+            tag_v = tag_val & 0xFFFF;
+            somethingtoSend = true;
+        }
+        if (sw_c == 2000) {
+            if (somethingtoSend) {
+                transmit_to_home(tag_v, 1);
+                somethingtoSend = false;
+            }
+        }
+
+        if (sw_d == 2000) {
+            IR_poll_counter++;
+
+            if (IR_poll_counter >= 5) {
+                z = sample_IR_outp ();
+                if (z != -1) {
+                    zone = z;
+                    transmit_to_home(zone, 5);
+                }
+
+                IR_poll_counter = 0;
+            }
+        }
+
+        //wait 100ms
         __delay_ms(POLL_INTERVAL_MS);
     }
 }
